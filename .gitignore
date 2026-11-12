@@ -1,0 +1,7 @@
+.DS_Store
+.local/
+.env
+.env.*
+!.env.example
+config.local.*
+*.log

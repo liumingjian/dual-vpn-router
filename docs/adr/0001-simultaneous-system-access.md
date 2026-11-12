@@ -1,0 +1,3 @@
+# Provide simultaneous access to both resource sets
+
+The user needs applications on one computer to reach resources served by two VPN gateways without manual switching. The tool will target simultaneous system access, preserving established connections to one resource set while the other is used. A controller that serially switches a single active VPN does not satisfy this requirement, and requiring a separate proxy configuration in each application does not satisfy the chosen application scope. This decision defines the product boundary; it does not select a tunnel implementation or assume that the gateways permit concurrent sessions.
