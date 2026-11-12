@@ -15,6 +15,7 @@ from .auth import authenticate, presented_key
 from .config import DEFAULT_CONFIG, load, save
 from .network import atomic_json
 from .runtime import Daemon, hook, recover, request, runtime_dir
+from .startup import detach_output, launch_worker, redact
 
 
 def executable():
@@ -198,11 +199,10 @@ def up(args, config):
             raise RuntimeError("Could not resume authentication-required sessions.")
     else:
         process = subprocess.Popen(
-            root_command("_daemon"),
+            root_command("_launch"),
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            stderr=subprocess.PIPE,
         )
         process.stdin.write(json.dumps(payload).encode())
         process.stdin.close()
@@ -214,15 +214,24 @@ def up(args, config):
                     raise RuntimeError(observed.get("error", "Startup failed."))
                 if observed["state"] == "running":
                     break
-            if process.poll() is not None:
+            if process.poll() not in (None, 0):
+                detail = process.stderr.read(8192).decode(errors="replace").strip()
+                detail = redact(detail, sessions)
+                process.stderr.close()
                 raise RuntimeError(
-                    "Controller could not start. Run dvr doctor; any recorded network state can be recovered with dvr down."
+                    "Controller could not start: "
+                    + (detail or f"launcher exit {process.returncode}")
                 )
             time.sleep(0.2)
         else:
             raise RuntimeError(
                 "Controller startup timed out. Inspect dvr status, then use dvr down if needed."
             )
+        code = process.wait(timeout=5)
+        detail = process.stderr.read(8192).decode(errors="replace").strip()
+        process.stderr.close()
+        if code:
+            raise RuntimeError("Controller launcher failed: " + redact(detail, sessions))
     print(
         "Controller started. Run dvr status to check each tunnel and dvr doctor --probe to verify resources."
     )
@@ -361,6 +370,7 @@ def parser():
         "--probe", action="store_true", help="Test gateway TLS and configured resources"
     )
     doctor_p.add_argument("--snapshot", type=Path)
+    sub.add_parser("_launch", help=argparse.SUPPRESS)
     sub.add_parser("_daemon", help=argparse.SUPPRESS)
     for name in ("_resume", "_down"):
         sub.add_parser(name, help=argparse.SUPPRESS).add_argument("--uid", type=int, required=True)
@@ -388,8 +398,15 @@ def main():
         if args.command.startswith("_"):
             if os.geteuid() != 0:
                 raise RuntimeError("This internal command requires sudo.")
+            if args.command == "_launch":
+                launch_worker(json.load(sys.stdin), executable())
+                # The detached worker is deliberately reparented; do not wait for its lifetime.
+                os._exit(0)
             if args.command == "_daemon":
-                return sys.exit(Daemon(json.load(sys.stdin), executable()).run())
+                daemon = Daemon(json.load(sys.stdin), executable())
+                print(json.dumps({"ready": True}), flush=True)
+                detach_output()
+                return sys.exit(daemon.run())
             if args.uid <= 0 or int(os.environ.get("SUDO_UID", "-1")) != args.uid:
                 raise RuntimeError("Control UID must match the invoking sudo user.")
             path = runtime_dir(args.uid) / "control.sock"

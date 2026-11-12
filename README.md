@@ -43,7 +43,7 @@ uv run dvr doctor --probe
 uv run dvr down
 ```
 
-`up` requests administrator authorization, authenticates through the local terminal, and starts a background controller. Passwords are read from Keychain when available; additional challenges can still be entered interactively. Closing the terminal does not stop the controller. It is not installed as a service at boot.
+`up` requests administrator authorization, authenticates through the local terminal, and starts a background controller. Passwords are read from Keychain when available; additional challenges can still be entered interactively. Detachment happens after sudo has consumed the current terminal authorization. A startup handshake reports worker initialization errors. Closing the terminal does not stop the controller. It is not installed as a service at boot.
 
 Authentication cookies remain in memory and cross process boundaries through pipes and a root-only local socket. Authentication output is parsed as data and never evaluated as shell code. The privileged OpenConnect processes receive cookies through stdin.
 

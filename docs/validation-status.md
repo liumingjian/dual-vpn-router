@@ -9,7 +9,7 @@
 - Central route ownership, scoped upstream DNS routes, private-domain UDP/TCP DNS forwarding, and DNS-derived resource routes.
 - Existing resolver backup/restoration, cleanup after configuration failure, and journal-based interrupted-process recovery.
 
-Nineteen automated tests pass, including a synthetic OpenConnect subprocess that supplies a cookie over stdin, invokes the actual configuration hook, exercises DNS-derived routing, and shuts down with temporary network state cleaned up. Network command effects are simulated; the test does not require administrator access. Static lint and formatting checks also pass.
+Twenty-two automated tests pass, including a synthetic OpenConnect subprocess that supplies a cookie over stdin, invokes the actual configuration hook, exercises DNS-derived routing, and shuts down with temporary network state cleaned up. Network command effects are simulated; the test does not require administrator access. Static lint and formatting checks also pass.
 
 ## Deployment observations
 
@@ -23,6 +23,12 @@ Exact endpoints, addresses, service IDs, and snapshots are retained only in Git-
 
 ## Not yet verified
 
-Authenticated OpenConnect sessions, Keychain access on a real credential, actual privileged route/resolver changes, concurrent gateway acceptance, sleep/wake recovery, and preservation of live application connections have not been validated against the deployment.
+The user completed one real gateway authentication and the CLI accepted its session metadata and saved the reusable credential. Tunnel establishment, Keychain retrieval on a subsequent login, actual privileged route/resolver changes, concurrent gateway acceptance, sleep/wake recovery, and preservation of live application connections remain unverified against the deployment.
 
 The current agent environment has no cached administrator authorization and no VPN credentials. Local terminal execution is required to enter those values; they are not requested in chat. A local single-gateway configuration and a separate two-gateway configuration are prepared for that experiment. Until it is completed, this repository contains an implemented and locally tested controller, not a verified replacement for the deployed VPN client.
+
+## Startup regression
+
+The first authenticated local launch failed before a runtime directory was created, while the original client remained connected. The CLI detached the sudo subprocess into a new session before sudo could consume the terminal-scoped authorization cached by `sudo -v`. A session-aware sudo stand-in reproduces the same controller-start failure without real credentials or network changes.
+
+The fix retains the calling session through sudo and detaches the worker from inside the privileged launcher. A startup handshake reports initialization failures, with authentication cookies redacted. Three regression checks cover authorization-context preservation, worker session separation, and sanitized initialization errors. A real privileged retry is still required to verify the deployment.
