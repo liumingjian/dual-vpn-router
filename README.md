@@ -1,80 +1,163 @@
 # dual-vpn-router
 
-A macOS CLI that coordinates OpenConnect VPN sessions, resource routes, and split DNS. It supports one or more gateways and replaces the AnyConnect application as the user-facing controller.
+A macOS CLI for company VPN access through OpenConnect. It manages VPN sessions, resource routes, and private DNS so browsers, SSH, and other applications can access internal services without separate proxy configuration.
 
-The first implementation has passed live single-gateway checks for representative services across both resource sets, private DNS, and the internal business application. Automated tests cover authentication input, the background controller, routing ownership, DNS forwarding, and recovery. Sleep/wake and crash recovery remain experimental; two simultaneous gateway sessions have not been verified. See [validation status](docs/validation-status.md) for the evidence and limits.
+This guide covers installation from source and configuration with your own account. The tested environment is an Apple Silicon Mac. Windows and Linux are not supported. Live checks verified simultaneous access to representative services in two resource sets through one gateway. Two concurrent gateway sessions, real sleep/wake recovery, and crash recovery remain unverified. See [validation status](docs/validation-status.md).
 
-## Setup
+## 1. Install from the repository
 
-Requires macOS, [uv](https://docs.astral.sh/uv/), and [OpenConnect](https://www.infradead.org/openconnect/).
+You need a Mac account that can use `sudo`, Git, and [Homebrew](https://brew.sh/). Run these commands as your normal macOS user. The CLI requests administrator authorization when it needs to change networking.
 
 ```sh
-brew install openconnect
+brew install uv openconnect
+
+git clone https://github.com/liumingjian/dual-vpn-router.git
+cd dual-vpn-router
+
 uv sync --locked
-uv run dvr init
-```
-
-To install a user-level command that works from any directory, use an isolated uv tool environment:
-
-```sh
 uv tool install --editable .
+export PATH="$HOME/.local/bin:$PATH"
+
+dvr --help
+```
+
+This is a Python CLI; there is no separate native compilation step. `uv sync` creates the project `.venv` and installs the project from source. `uv tool install` creates an isolated user-level environment and installs the `dvr` command. You do not need to install Python packages globally.
+
+To make `dvr` available in future terminal sessions:
+
+```sh
+uv tool update-shell
+```
+
+Restart your terminal after that command. Keep the cloned repository at the same location because the installation is editable. OpenConnect is installed separately by Homebrew and must remain available on `PATH`.
+
+## 2. Configure your own account
+
+The default configuration is `~/.config/dual-vpn-router/config.json`. It contains gateway addresses, routing rules, DNS domains, and usernames. Passwords belong in macOS Keychain, not in this JSON file.
+
+Choose the setup method that matches your situation.
+
+### Use a configuration shared by your team
+
+Users of the same company VPN can share the gateway, route, and DNS settings. Ask the maintainer for an account-free `team-config.json` through your internal sharing channel. Company-specific addresses and deployment files are not committed to this public repository.
+
+If you do not already have a configuration:
+
+```sh
+mkdir -p ~/.config/dual-vpn-router
+cp -n /path/to/team-config.json ~/.config/dual-vpn-router/config.json
+chmod 600 ~/.config/dual-vpn-router/config.json
+nano ~/.config/dual-vpn-router/config.json
+```
+
+Replace each gateway's empty `username` with your own VPN username. Keep the shared gateway, route, and DNS values. Save the file, then continue to the connection step. `cp -n` preserves an existing configuration; edit that file instead if you have already set one up.
+
+Each user authenticates with their own account and stores their password in their own macOS Keychain. Sharing this repository or an account-free configuration does not share another user's password or VPN session.
+
+### Configure a new deployment
+
+From the cloned repository, copy the appropriate example:
+
+```sh
+mkdir -p ~/.config/dual-vpn-router
+cp -n examples/config.single.json ~/.config/dual-vpn-router/config.json
+chmod 600 ~/.config/dual-vpn-router/config.json
+nano ~/.config/dual-vpn-router/config.json
+```
+
+The example uses placeholder addresses. Replace `url`, `username`, `routes`, `domains`, and `probes` with values for your deployment before connecting. Use [examples/config.single.json](examples/config.single.json) when one gateway serves both resource sets. Use [examples/config.json](examples/config.json) as a two-gateway template if each gateway serves different resources. Start with one gateway when it already provides the access you need.
+
+You can also run `dvr init` to create a configuration interactively. Its wizard asks for two gateways, their resource prefixes, DNS domains, and usernames. It refuses to overwrite an existing configuration. Passwords are requested later, when you connect.
+
+### Configuration fields
+
+| Field | Meaning |
+| --- | --- |
+| `name` | A unique lowercase gateway identifier, such as `company`. |
+| `url` | The HTTPS VPN entry point, including its port if needed. Use `https://`, even if an existing client displays a bare hostname or an HTTP address. |
+| `username` | Your own VPN account. If empty, the CLI asks at each authentication. |
+| `routes` | Explicit private IPv4 prefixes owned by this gateway. Prefixes must not overlap, including across gateways. Use the exact prefixes supplied by your administrator; shortened network names are not expanded automatically. |
+| `domains` | Private DNS suffixes owned by this gateway. An exact application hostname is also valid. The longest suffix wins; duplicate ownership is rejected. |
+| `trust` | `system` uses normal TLS verification. `presented` explicitly accepts the certificate offered by this configured gateway at authentication time. It does not verify identity against an independent source or change the system trust store. |
+| `keychain` | Defaults to `true`. Store and retrieve reusable passwords in this user's macOS Keychain. Set to `false` to let OpenConnect prompt each time. |
+| `dns_servers` | Optional IPv4 resolver addresses. If omitted, use the DNS servers supplied by the VPN gateway. |
+| `replace_resolvers` | Defaults to `false`. Set to `true` to back up, temporarily replace, and later restore an existing `/etc/resolver/<domain>` file. Symlinks remain conflicts. |
+| `probes` | Representative internal services to check. A TCP probe needs `kind`, `host`, and `port`; an HTTP probe needs `kind` and `url`. See the examples. |
+
+To use a different file, put `--config` before the command:
+
+```sh
+dvr --config /path/to/config.json up
+dvr --config /path/to/config.json doctor --probe
+```
+
+## 3. Connect and verify
+
+```sh
+dvr up --replace-anyconnect
 dvr status
+dvr doctor --probe
 ```
 
-`init` creates `~/.config/dual-vpn-router/config.json` with mode `0600`. It asks for HTTPS gateways, explicit IPv4 resource prefixes, private DNS domains, and optional usernames. Passwords are requested at connection time. See [examples/config.json](examples/config.json) for the schema; its hosts are placeholders.
+`up` asks for administrator authorization and authenticates with your VPN account. The macOS `Password:` prompt is for your Mac login password. The gateway password prompt is for your VPN password. Password input is hidden. Complete any additional one-time-code or browser challenge when prompted.
 
-For an alternate configuration, put `--config` before the command:
+After a successful login, the CLI saves your reusable VPN password in Keychain when `keychain` is enabled. Later connections retrieve it using your configured username; additional authentication challenges may still require interaction.
+
+`--replace-anyconnect` allows the CLI to stop an already connected AnyConnect service before taking over its routes. If no AnyConnect service is connected, the same command still works. The CLI records a private network snapshot first. A new login may itself invalidate an existing gateway session before routing changes begin.
+
+A successful startup message means the background controller is running. Check that each required gateway reaches `connected` in `dvr status`, then check the actual services with `dvr doctor --probe`. The diagnostic command reports failure when no representative service probes are configured, because tunnel state alone does not establish application access.
+
+The controller keeps running when you close the terminal. It does not start automatically at boot. Passwords and authentication cookies do not appear in configuration or process arguments. Cookies remain in memory and are transferred through pipes and a root-only local socket.
+
+## 4. Daily commands
+
+| Command | Action |
+| --- | --- |
+| `dvr up --replace-anyconnect` | Connect or resume gateways that require authentication. |
+| `dvr status` | Show controller, gateway, route, and DNS state. |
+| `dvr doctor --probe` | Check configured gateways and representative internal services without changing network settings. |
+| `dvr down` | Stop managed sessions, remove owned routes, and restore resolver files. |
+
+If startup replaced an AnyConnect connection, `down` also attempts to restore that original connection. If the original client requires user interaction, the status report says recovery is incomplete.
+
+Gateway authentication expiry is reported as `authentication_required`. Run `dvr up` in a terminal to authenticate those gateways again while preserving healthy sessions. For a cached password that has changed, update or remove the matching `dual-vpn-router:` item in Keychain Access, then retry authentication.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| `dvr: command not found` | Run `export PATH="$HOME/.local/bin:$PATH"` in the current shell. Run `uv tool update-shell` and restart the terminal for future sessions. |
+| OpenConnect is missing | Run `brew install openconnect` and check `command -v openconnect`. |
+| Administrator authorization fails | Enter your Mac login password at the sudo prompt. Run the command as your normal user in a local interactive terminal. |
+| Certificate verification fails | Check the gateway URL and the deployment's `trust` policy. Use `presented` only when your shared configuration explicitly calls for trusting the offered certificate. |
+| An existing resolver owns a domain | Inspect `/etc/resolver/<domain>`. If the tool should temporarily own that domain, set that gateway's `replace_resolvers` to `true`; it saves the original for restoration. |
+| A route conflict is reported | Stop the VPN or network tool that owns the conflicting route, then retry. The CLI preserves existing routes instead of replacing them. |
+| Tunnel is connected but a service fails | Check that its network is in `routes` and its private hostname is in `domains`. Run `dvr doctor --probe` and inspect the individual results. |
+| Controller stopped unexpectedly | Run `dvr down` to recover journaled network state, inspect any reported conflict, then reconnect. |
+
+The implementation supports IPv4 VPN routes and IPv4 DNS upstreams. Private DNS responses can add host routes for applications outside the explicit resource prefixes. These routes last until controller shutdown and are retained across reconnects. The tool does not configure IPv6 VPN routes or manage Clash settings. Sleep/wake and crash recovery have automated coverage where noted, but have not been verified in the deployed environment.
+
+## Update or uninstall
+
+Stop the controller before updating the source used by its background processes:
 
 ```sh
-uv run dvr --config /path/to/config.json doctor
-uv run dvr --config /path/to/config.json up
+dvr down
+cd /path/to/dual-vpn-router
+git pull --ff-only
+uv sync --locked
+uv tool install --reinstall --editable .
+dvr up --replace-anyconnect
 ```
 
-Each gateway has:
-
-- `name`, `url`, and `username`: a unique identifier, HTTPS entry point, and optional saved username.
-- `routes`: explicit, non-overlapping private IPv4 prefixes owned by that gateway. Exact prefixes are required; shortened network names are not expanded automatically.
-- `domains`: private DNS suffixes owned by that gateway. The longest matching suffix wins; exact duplicate domain ownership is rejected.
-- `trust`: `system` for normal TLS validation, or `presented` to accept the certificate presented by this configured gateway each time interactive authentication begins. The latter is an explicit deployment trust policy, not an independently verified server identity. It does not change the system trust store.
-- `keychain`: whether reusable passwords are stored in macOS Keychain; defaults to `true`. Passwords are never passed in command arguments or written to configuration.
-- `dns_servers`: optional IPv4 resolver override; otherwise use resolvers supplied by the gateway.
-- `replace_resolvers`: defaults to `false`. Set to `true` to temporarily replace an existing `/etc/resolver/<domain>` file, preserving its contents and metadata for restoration. Symlinks are preserved and reported as conflicts.
-- `probes`: optional TCP or HTTP checks for representative internal services. These distinguish actual application access from a tunnel or route merely existing.
-
-## Daily use
+To uninstall the command, stop it and then remove its isolated tool environment:
 
 ```sh
-uv run dvr up
-uv run dvr status
-uv run dvr doctor --probe
-uv run dvr down
+dvr down
+uv tool uninstall dual-vpn-router
 ```
 
-`up` requests administrator authorization, authenticates through the local terminal, and starts a background controller. Passwords are read from Keychain when available; additional challenges can still be entered interactively. Detachment happens after sudo has consumed the current terminal authorization. A startup handshake reports worker initialization errors. Closing the terminal does not stop the controller. It is not installed as a service at boot.
-
-Authentication cookies remain in memory and cross process boundaries through pipes and a root-only local socket. Authentication output is parsed as data and never evaluated as shell code. The privileged OpenConnect processes receive cookies through stdin.
-
-To replace a currently connected AnyConnect service during validation:
-
-```sh
-uv run dvr up --replace-anyconnect
-```
-
-This records a private network snapshot, authenticates, and then stops the original service before applying managed routes. A new authentication may itself invalidate an existing gateway session. `down` or controller failure attempts to restore the original service and verifies its connected state. If the original client needs interaction, status reports that recovery remains incomplete.
-
-`status` reports transport/configuration state separately for each gateway. A connected tunnel does not establish application reachability; use `doctor --probe`. Gateway authentication expiry is reported as `authentication_required`; running `up` again authenticates those gateways while preserving healthy sessions.
-
-## Routing, DNS, and recovery
-
-The controller owns its route entries and resolver files. It does not run two unmodified `vpnc-script` instances. Existing route conflicts stop configuration rather than replacing an unrelated route.
-
-A local UDP/TCP DNS relay forwards configured private domains through their owning tunnel. Upstream sockets bind to the tunnel interface, and resolver-address routes are scoped, allowing two tunnels to use the same DNS-server address. An unavailable gateway yields a DNS failure; the relay never forwards these names to a public resolver.
-
-Private IPv4 addresses returned by the configured domain resolvers receive host routes through their owning tunnel before the response reaches the application, including applications outside the explicit resource prefixes. Conflicts with another gateway's configured prefix are rejected. These derived routes are retained across reconnects and removed at controller shutdown; they are not currently expired on individual DNS TTLs.
-
-Network ownership and original resolver contents are journaled in a root-owned runtime directory. `down` can recover recorded state after an interrupted controller. Process recovery checks recorded process identity before signalling a stale PID. If a resolver has changed externally, recovery preserves that change and reports the conflict instead of overwriting it.
-
-The first version supports IPv4 routes and IPv4 DNS upstreams. It does not configure IPv6 VPN routes, integrate with Clash, or provide automatic browser login while no user is present. Recovery requiring a new password, OTP, or browser approval is reported for interactive completion.
+Uninstalling the command preserves your configuration and Keychain entries.
 
 ## Development
 
@@ -85,11 +168,11 @@ uv run ruff format --check dual_vpn_router tests
 uv run python -m unittest discover -s tests -v
 ```
 
-The test suite does not authenticate against company gateways, require sudo, or modify the machine's routes or resolver files. It uses temporary resolver directories, local loopback DNS sockets, a synthetic OpenConnect process, and a pseudo-terminal for the password-plus-OTP flow.
+The tests use temporary resolver directories, loopback DNS sockets, synthetic OpenConnect processes, and a pseudo-terminal for password-plus-OTP input. They do not require sudo, authenticate against company gateways, or change the machine's routes or resolver files.
 
 - [Design and evidence](docs/design.md)
 - [Local validation plan](docs/validation-plan.md)
 - [Validation status](docs/validation-status.md)
 - [Domain vocabulary](GLOSSARY.md)
 
-Deployment configuration, credentials, gateway addresses, and local diagnostic snapshots belong outside commits. `.local/` is ignored by Git.
+Keep deployment configuration, credentials, gateway addresses, and diagnostic snapshots out of commits. `.local/` is ignored by Git. Maintainers sharing a team configuration should copy only the non-secret gateway, route, DNS, trust, and probe settings, and clear every `username` field first. Share that file through an internal channel rather than this public repository.

@@ -1,0 +1,17 @@
+{
+  "gateways": [
+    {
+      "name": "company",
+      "url": "https://vpn.example.invalid:4443",
+      "username": "YOUR_USERNAME",
+      "trust": "system",
+      "keychain": true,
+      "routes": ["192.168.10.0/24", "192.168.20.0/24"],
+      "domains": ["erp.corp.example", "lan"],
+      "probes": [
+        {"kind": "tcp", "host": "192.168.10.10", "port": 22},
+        {"kind": "http", "url": "http://erp.corp.example/"}
+      ]
+    }
+  ]
+}
