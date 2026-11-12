@@ -2,7 +2,7 @@
 
 A macOS CLI that coordinates OpenConnect VPN sessions, resource routes, and split DNS. It supports one or more gateways and replaces the AnyConnect application as the user-facing controller.
 
-The first implementation is experimental. Automated tests exercise authentication input, the background controller, routing ownership, DNS forwarding, and recovery using local fixtures. Authenticated compatibility with a real deployment still requires local validation; passing tests does not establish that two gateways permit concurrent sessions.
+The first implementation has passed live single-gateway checks for representative services across both resource sets, private DNS, and the internal business application. Automated tests cover authentication input, the background controller, routing ownership, DNS forwarding, and recovery. Sleep/wake and crash recovery remain experimental; two simultaneous gateway sessions have not been verified. See [validation status](docs/validation-status.md) for the evidence and limits.
 
 ## Setup
 
@@ -12,6 +12,13 @@ Requires macOS, [uv](https://docs.astral.sh/uv/), and [OpenConnect](https://www.
 brew install openconnect
 uv sync --locked
 uv run dvr init
+```
+
+To install a user-level command that works from any directory, use an isolated uv tool environment:
+
+```sh
+uv tool install --editable .
+dvr status
 ```
 
 `init` creates `~/.config/dual-vpn-router/config.json` with mode `0600`. It asks for HTTPS gateways, explicit IPv4 resource prefixes, private DNS domains, and optional usernames. Passwords are requested at connection time. See [examples/config.json](examples/config.json) for the schema; its hosts are placeholders.

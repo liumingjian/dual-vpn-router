@@ -275,6 +275,7 @@ def probe_resource(probe):
 
 def doctor(args, config):
     checks = []
+    controller = status()
 
     def add(name, ok, detail):
         checks.append({"check": name, "ok": ok, "detail": detail})
@@ -282,10 +283,14 @@ def doctor(args, config):
     add("platform", platform.system() == "Darwin", platform.system())
     binary = shutil.which("openconnect")
     add("openconnect", bool(binary), binary or "Install with brew install openconnect")
+    authorized = controller["state"] in ("running", "starting")
+    cached = subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0
     add(
         "administrator",
-        subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0,
-        "Network management needs local sudo authorization; doctor does not request it.",
+        authorized or cached,
+        "The running controller already holds network-management privileges."
+        if authorized
+        else "Starting network management needs local sudo authorization; doctor does not request it.",
     )
     for gateway in config["gateways"]:
         name = gateway["name"]
@@ -341,7 +346,7 @@ def doctor(args, config):
                     False,
                     "No representative service probe is configured; application access remains unverified.",
                 )
-    result = {"checks": checks, "controller": status()}
+    result = {"checks": checks, "controller": controller}
     if args.snapshot:
         result["snapshot"] = str(snapshot(args.snapshot))
     print(json.dumps(result, indent=2))
