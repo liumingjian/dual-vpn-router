@@ -1,0 +1,24 @@
+{
+  "gateways": [
+    {
+      "name": "a",
+      "url": "https://vpn-a.example.invalid:4443",
+      "username": "",
+      "trust": "system",
+      "keychain": true,
+      "routes": ["192.168.10.0/24"],
+      "domains": ["a.corp.example"],
+      "probes": [{"kind": "tcp", "host": "192.168.10.10", "port": 22}]
+    },
+    {
+      "name": "b",
+      "url": "https://vpn-b.example.invalid:4443",
+      "username": "",
+      "trust": "system",
+      "keychain": true,
+      "routes": ["192.168.20.0/24"],
+      "domains": ["erp.corp.example"],
+      "probes": [{"kind": "http", "url": "http://erp.corp.example/"}]
+    }
+  ]
+}

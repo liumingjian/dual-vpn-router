@@ -66,8 +66,16 @@ Validate the internal business application using the system resolver and an HTTP
 
 Overlapping resource prefixes, conflicting DNS answers, and gateway-provided DNS addresses shared across tunnels require explicit ownership in local configuration. A network controller must coordinate these resources rather than run two unchanged copies of the default configuration script. The exact ownership rules remain a validation prerequisite.
 
-The [local validation plan](validation-plan.md) defines the proposed experiment and its completion criteria. Its execution and the final design await the user's shared-understanding confirmation.
+The [local validation plan](validation-plan.md) defines the proposed experiment and its completion criteria. The user confirmed the design and authorized this experiment; entering credentials and administrator authorization remains a local interactive step.
 
 ## Completion criteria for discovery
 
 Resolve each branch using local evidence, a verified connectivity experiment, or an explicit user decision. Distinguish unverified capabilities from accepted requirements. Confirm the resulting design with the user before implementing the controller.
+
+## Implementation phase
+
+The user confirmed the design and authorized implementation and local connection validation, including temporarily interrupting the existing client. The controller is implemented with Python's standard library and OpenConnect; uv manages its isolated environment. See [validation status](validation-status.md) for the distinction between automated checks, deployment observations, and remaining authenticated tests.
+
+Route and resolver ownership is recorded centrally. Explicit existing-resolver takeover saves the original file for restoration; unapproved conflicts remain errors. A UDP/TCP private DNS relay binds upstream queries to the owning tunnel and installs private IPv4 host routes for returned resource addresses. This covers business applications whose addresses lie outside the initial prefix list.
+
+Live read-only observations through Gateway B show that several representative Resource Set A services and the internal business application are already reachable together. A single-gateway configuration is therefore the first local validation candidate, with a dual-gateway configuration available if the simpler topology does not meet the acceptance criteria.

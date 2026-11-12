@@ -1,6 +1,6 @@
 # Local compatibility validation
 
-This is a proposed plan, not a report of a completed experiment. The user has accepted simultaneous system access, CLI-owned sessions on macOS, background operation, independent recovery, Keychain storage, and explicit trust of the configured gateways' presented certificates.
+The user authorized this plan. It is not a report of a completed experiment. The user has accepted simultaneous system access, CLI-owned sessions on macOS, background operation, independent recovery, Keychain storage, and explicit trust of the configured gateways' presented certificates.
 
 ## Before changing connectivity
 
